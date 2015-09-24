@@ -1,2 +1,2 @@
-# DRFR
-Debiased random forest regression
+# IDRFR
+Iteratively Debiased Random Forest Regression
