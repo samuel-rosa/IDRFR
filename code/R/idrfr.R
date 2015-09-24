@@ -1,14 +1,15 @@
+rm(list = ls())
 # Optimum number of iterations for debiasing a random forest regression ########
 optimRandomForest <-
   function (x, y, niter = 10, nruns = 100, ntree = 500, ntrain = 2/3, 
             nodesize = 5, mtry = max(floor(ncol(x) / 3), 1), profile = TRUE) {
     
+    # Settings
     nsample <- length(y)
-    if (ntrain < 1) {
-      ntrain <- round(nsample * ntrain)
-    }
+    if (ntrain < 1) ntrain <- round(nsample * ntrain)
     ntest <- nsample - ntrain
     
+    # Start simulation
     mse <- NULL
     k <- 0
     repeat {
@@ -16,18 +17,19 @@ optimRandomForest <-
       id.train <- sample(1:nsample, ntrain, replace = FALSE)
       id.test <- c(1:nsample)[-id.train]
       
-      res <- .iterRandomForest(xtrain = x[id.train, ], ytrain = y[id.train], 
-                               xtest = x[id.test,], ntree = ntree, mtry = mtry,
+      res <- .iterRandomForest(xtrain = x[id.train, ], ytrain = y[id.train],
+                               xtest = x[id.test, ], ntree = ntree, mtry = mtry,
                                nodesize = nodesize, niter = niter)
       res <- res[, -c(1:ntrain)] # prediction for test cases of this holding-out
       
-      mse <- rbind(mse, apply(((t(res) - y[id.test])^2), 2, mean))
+      mse <- rbind(mse, apply(((t(res) - y[id.test]) ^ 2), 2, mean))
       
       if (k %% 100 == 0) print(k)
       if (k == nruns) break
       
     } # repeat ends
     
+    # Prepare output
     colnames(mse) <- paste("iter-", 1:niter, sep = "")
     res <- list(mse = data.frame(mean = apply(mse, 2, mean), 
                                  sd = apply(mse, 2, sd)),
@@ -37,26 +39,33 @@ optimRandomForest <-
     
     # Plot mse profile
     if (profile) {
-      eb <- apply(mse, 2, sd) / sqrt(nruns)
-      mse <- apply(mse, 2, mean)
-      upper <- (mse + eb) / mse[1]
-      lower <- (mse - eb) / mse[1]
-      mse <- mse / mse[1]
-      plot(1:niter, mse, type = "b", ylim = c(min(lower), max(upper)),
-           ylab = "Standardized mean squared error", xlab = "Iteration",
-           #sub = paste("Average of ", nruns, " simulations", sep = ""),
-           main = "Mean squared error profile")
-      abline(h = mse[1], col = "red")
-      arrows(1:niter, lower, 1:niter, upper, length = 0.05, angle = 90, code = 3)
-      points(x = which.min(mse), y = min(mse), pch = 20, col = "blue", cex = 1.1)
+      .profRandomForest(mse = mse, nruns = nruns, niter = niter)
     }
     
-    # Output: average of the mean squared prediction error for each iteration 
-    # over multiple runs
+    # Output
     return (res)
   }
 
-# 
+# Plot MSE profile #############################################################
+.profRandomForest <-
+  function (mse, nruns, niter) {
+    
+    # Prepare data for plotting
+    eb <- apply(mse, 2, sd) / sqrt(nruns)
+    mse <- apply(mse, 2, mean)
+    upper <- (mse + eb) / mse[1]
+    lower <- (mse - eb) / mse[1]
+    mse <- mse / mse[1]
+    
+    # Plotting
+    plot(1:niter, mse, type = "b", ylim = c(min(lower), max(upper)),
+         ylab = "Standardized mean squared error", xlab = "Iteration",
+         main = "Mean squared error profile")
+    abline(h = mse[1], col = "red")
+    arrows(1:niter, lower, 1:niter, upper, length = 0.05, angle = 90, code = 3)
+    points(x = which.min(mse), y = min(mse), col = "blue", lwd = 2)
+  }
+# Iterative calibration of random forest regressions ###########################
 .iterRandomForest <- 
   function (xtrain, ytrain, xtest, ntree, nodesize, mtry, niter) {
     # xtrain is the design matrix for training cases, n*p; 
@@ -66,6 +75,7 @@ optimRandomForest <-
     # nodesize is the maximal node size per tree;
     # niter is the number of iterations for the bias-correction RFs.
     
+    # Initial settings
     ni <- 0
     ntrain <- nrow(xtrain)
     ntest <- nrow(xtest)
@@ -76,70 +86,94 @@ optimRandomForest <-
       ni <- ni + 1
       RF.temp <- randomForest(x = xtrain, y = b, ntree = ntree, mtry = mtry,
                               nodesize = nodesize)
-      bpred.oob <- RF.temp[[3]]
-      bpred.test <- predict(object = RF.temp, newdata = xtest) # Predict for test cases
+      bpred.oob <- RF.temp$predicted
+      
+      # Predict for test cases
+      bpred.test <- as.numeric(predict(object = RF.temp, newdata = xtest))
       pred.iter <- rbind(pred.iter, c(bpred.oob, bpred.test))
       b <- b - bpred.oob
       if (ni >= niter) break
     } # repeat ends
     
     rownames(pred.iter) <- paste("iter-", 1:niter, sep = "")
-    colnames(pred.iter) <- c(paste("Tr-", 1:ntrain, sep = ""), paste("Test-", 1:ntest, sep = ""))
+    colnames(pred.iter) <- c(paste("Tr-", 1:ntrain, sep = ""), 
+                             paste("Test-", 1:ntest, sep = ""))
     
-    pred <- pred.iter[1,]		# This saves the final prediction results of different iterations of BC
-    for (k in 2:niter){
-      pred = rbind(pred, apply(pred.iter[1:k,], 2, sum))
+    # This saves the final prediction results of different iterations of BC
+    pred <- pred.iter[1,]
+    for (k in 2:niter) {
+      pred <- rbind(pred, apply(pred.iter[1:k,], 2, sum))
     } # for k ends
     
     rownames(pred) <- paste("iter-", 1:niter, sep = "")
-    colnames(pred) <- c(paste("Tr-", 1:ntrain, sep = ""), paste("Test-", 1:ntest, sep = ""))
+    colnames(pred) <- c(paste("Tr-", 1:ntrain, sep = ""), 
+                        paste("Test-", 1:ntest, sep = ""))
     
     return(pred)
     
   } # function ends
 
 # Fit a debiased random forest regression model ################################
-fitIDRFR <- 
-  function (y, x, ntree = 500, mtry = max(floor(ncol(x) / 3), 1), nodesize = 5,
-            slr = FALSE) {
+fitRandomForest <- 
+  function (x, y, ntree = 500, mtry = max(floor(ncol(x) / 3), 1), nodesize = 5,
+            niter = 2, slr = FALSE) {
     
     # Fit random forest models
-    rf_p <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
-                         nodesize = nodesize)
-    rf_r <- rf_p$predicted - y
-    rf_r <- randomForest(y = rf_r, x = x, ntree = ntree, mtry = mtry, 
-                         nodesize = nodesize)
+    rf <- list()
+    for (i in 1:niter) {
+      rf[[i]] <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
+                            nodesize = nodesize)
+      y <- y - rf[[i]]$predicted
+    }
+#     rf_p <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
+#                          nodesize = nodesize)
+#     rf_r <- rf_p$predicted - y
+#     rf_r <- randomForest(y = rf_r, x = x, ntree = ntree, mtry = mtry, 
+#                          nodesize = nodesize)
     
     # Fit simple linear regression
     if (slr) {
-      x <- rf_p$predicted - rf_r$predicted
-      lr <- lm(y ~ x)
-      drfr <- list(rf_p, rf_r, lr)
-    } else {
-      drfr <- list(rf_p, rf_r)
+      x <- sapply(1:length(rf), function (i) rf[[i]]$predicted)
+      x <- apply(x, 1, sum)
+      # x <- rf_p$predicted - rf_r$predicted
+      rf[[niter + 1]] <- lm(y ~ x)
     }
     
-    # Prepare output: debiased random forest regression
-    a <- attributes(drfr)
-    a$slr <- slr
-    attributes(drfr) <- a
-    return (drfr)
+    # Output
+    return (rf)
   }
 
 # Predict using a debiased random forest regression model ######################
-predictIDRFR <-
+predRandomForest <-
   function (object, newdata) {
     
+    pred <- list()
+    slr <- sapply(object, class)
+    if (slr[length(slr)] == "lm") {
+      for (i in 1:c(length(slr) - 1)) {
+        pred[[i]] <- predict(object = object[[i]], newdata = newdata)
+      }
+      x <- apply(data.frame(pred), 1, sum)
+      pred[[length(slr)]] <- predict(object = object[[length(slr)]], newdata = data.frame(x))
+    } else {
+      for (i in 1:length(object)) {
+        pred[[i]] <- predict(object = object[[i]], newdata = newdata)
+      }
+    }
+    
+    res <- as.numeric(apply(data.frame(pred), 1, sum))
+    
+    
     # Predict with random forest models
-    pred1 <- predict(object = object[[1]], newdata = newdata)
-    pred2 <- predict(object = object[[2]], newdata = newdata)
-    res <- pred1 - pred2
+#     pred1 <- predict(object = object[[1]], newdata = newdata)
+#     pred2 <- predict(object = object[[2]], newdata = newdata)
+#     res <- pred1 - pred2
     
     # Predict with simple linear regression model
-    if (attr(object, "slr")) {
-      x <- data.frame(x = res)
-      res <- predict(object = object[[3]], newdata = x)
-    }
+#     if (attr(object, "slr")) {
+#       x <- data.frame(x = res)
+#       res <- predict(object = object[[3]], newdata = x)
+#     }
     
     # Output
     return (res)
@@ -183,10 +217,10 @@ fit1 <- randomForest(y = y, x = data.frame(x))
 pred1 <- predict(fit1, data.frame(x))
 fit2 <- randomForest(y = y, x = data.frame(x), corr.bias = TRUE)
 pred2 <- predict(fit2, data.frame(x))
-fit3 <- fitDRFR(y = y, x = data.frame(x))
-pred3 <- predictDRFR(fit3, data.frame(x))
-fit4 <- fitDRFR(y = y, x = data.frame(x), slr = TRUE)
-pred4 <- predictDRFR(fit4, data.frame(x))
+fit3 <- fitRandomForest(y = y, x = data.frame(x))
+pred3 <- predRandomForest(fit3, data.frame(x))
+fit4 <- fitRandomForest(y = y, x = data.frame(x), slr = TRUE)
+pred4 <- predRandomForest(fit4, data.frame(x))
 
 # Plot predictions
 plot(y ~ x, pch = 20, type = "n")
@@ -214,7 +248,7 @@ require(MASS)
 data("Boston")
 p <- 0.7
 n <- nrow(Boston)
-n_sim <- 100
+n_sim <- 10
 res_boston <- matrix(0, nrow = n_sim, ncol = 4)
 
 for (j in 1:n_sim) {
@@ -227,14 +261,14 @@ for (j in 1:n_sim) {
   fit1 <- randomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)])
   fit2 <- randomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)],
                        corr.bias = TRUE)
-  fit3 <- fitDRFR(y = Boston$medv[i], x = Boston[i, -ncol(Boston)])
-  fit4 <- fitDRFR(y = Boston$medv[i], x = Boston[i, -ncol(Boston)], slr = TRUE)
+  fit3 <- fitRandomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)])
+  fit4 <- fitRandomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)], slr = TRUE)
   
   # Predict at new observations
   pred1 <- predict(object = fit1, newdata = Boston[-i, -ncol(Boston)])
   pred2 <- predict(object = fit2, newdata = Boston[-i, -ncol(Boston)])
-  pred3 <- predictDRFR(object = fit3, newdata = Boston[-i, -ncol(Boston)])
-  pred4 <- predictDRFR(object = fit4, newdata = Boston[-i, -ncol(Boston)])
+  pred3 <- predRandomForest(object = fit3, newdata = Boston[-i, -ncol(Boston)])
+  pred4 <- predRandomForest(object = fit4, newdata = Boston[-i, -ncol(Boston)])
   
   # Compute perfomance statistics
   res_boston[j, 1] <- mean((pred1 - Boston$medv[-i]) ^ 2)
@@ -277,8 +311,9 @@ n <- nrow(dnos)
 n_sim <- 1
 res_dnos <- matrix(0, nrow = n_sim, ncol = 4)
 y <- "ECEC"
-y <- "logECEC"
+# y <- "logECEC"
 y <- which(colnames(dnos) == y)
+x <- 1:9
 
 for (j in 1:n_sim) {
   
@@ -287,16 +322,16 @@ for (j in 1:n_sim) {
   i <- i[1:floor(n * p)]
   
   # Fit random forest models
-  fit1 <- randomForest(y = dnos[i, y], x = dnos[i, -y])
-  fit2 <- randomForest(y = dnos[i, y], x = dnos[i, -y], corr.bias = TRUE)
-  fit3 <- fitDRFR(y = dnos[i, y], x = dnos[i, -y])
-  fit4 <- fitDRFR(y = dnos[i, y], x = dnos[i, -y], slr = TRUE)
+  fit1 <- randomForest(y = dnos[i, y], x = dnos[i, x])
+  fit2 <- randomForest(y = dnos[i, y], x = dnos[i, x], corr.bias = TRUE)
+  fit3 <- fitRandomForest(y = dnos[i, y], x = dnos[i, x])
+  fit4 <- fitRandomForest(y = dnos[i, y], x = dnos[i, x], slr = TRUE)
   
   # Predict at new observations
-  pred1 <- predict(object = fit1, newdata = dnos[-i, -y])
-  pred2 <- predict(object = fit2, newdata = dnos[-i, -y])
-  pred3 <- predictDRFR(object = fit3, newdata = dnos[-i, -y])
-  pred4 <- predictDRFR(object = fit4, newdata = dnos[-i, -y])
+  pred1 <- predict(object = fit1, newdata = dnos[-i, x])
+  pred2 <- predict(object = fit2, newdata = dnos[-i, x])
+  pred3 <- predRandomForest(object = fit3, newdata = dnos[-i, x])
+  pred4 <- predRandomForest(object = fit4, newdata = dnos[-i, x])
   
   # Compute perfomance statistics
   res_dnos[j, 1] <- mean((pred1 - dnos[-i, y]) ^ 2)
