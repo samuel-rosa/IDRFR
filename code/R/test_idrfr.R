@@ -1,6 +1,7 @@
 # Iteratively debiased random forest regression
 rm(list = ls())
 require(randomForest)
+source("code/R/idrfr.R")
 
 # Synthetic dataset (based on Xu (2013)) #######################################
 # The raw random forest prediction is biased because it is fundamentally a 
@@ -82,7 +83,8 @@ for (j in 1:n_sim) {
   fit2 <- randomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)],
                        corr.bias = TRUE)
   fit3 <- fitRandomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)])
-  fit4 <- fitRandomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)], slr = TRUE)
+  fit4 <- fitRandomForest(y = Boston$medv[i], x = Boston[i, -ncol(Boston)], 
+                          slr = TRUE)
   
   # Predict at new observations
   pred1 <- predict(object = fit1, newdata = Boston[-i, -ncol(Boston)])
@@ -122,12 +124,18 @@ apply(res_boston, 2, sd)
 # If the response variable is Gaussian distributed, the effect of the simple
 # linear regression is negligible.
 
+require(sp)
+
 # Prepare data
 address <- paste("https://raw.githubusercontent.com/samuel-rosa/dnos-sm-rs/",
                  "master/data/point/labData.csv", sep = "")
 dnos <- read.table(address, header = TRUE, sep = ";", quote = "")
 dnos <- dnos[, c(3:4, 7, 10, 13, 16, 19, 22, 28, 31)]
 dnos$logECEC <- log(dnos$ECEC)
+coordinates(dnos) <- ~ longitude + latitude
+proj4string(dnos) <- CRS("+init=epsg:4674")
+dnos <- spTransform(dnos, CRS("+init=epsg:32722"))
+dnos <- data.frame(dnos@coords, dnos@data)
 
 # Set parameters
 p <- 0.5
@@ -143,7 +151,7 @@ x <- 1:9
 tmp <- optimRandomForest(x = dnos[, x], y = dnos[, y], niter = 10, nruns = 2)
 
 for (j in 1:n_sim) {
-  
+
   # Select calibration and prediction datasets
   i <- sample(n)
   i <- i[1:floor(n * p)]
@@ -161,7 +169,7 @@ for (j in 1:n_sim) {
   pred4 <- predRandomForest(object = fit4, newdata = dnos[-i, x])
   
   # Compute perfomance statistics
-  res_dnos[j, 1] <- mean((pred1 - dnos[-i, y]) ^ 2)
+  res_dnos[j, 1] <- mean((pred1 - dnos[-i, y])^2)
   res_dnos[j, 2] <- mean((pred2 - dnos[-i, y])^2)
   res_dnos[j, 3] <- mean((pred3 - dnos[-i, y])^2)
   res_dnos[j, 4] <- mean((pred4 - dnos[-i, y])^2)
@@ -190,4 +198,3 @@ plot(pred4 ~ dnos[-i, y], main = "BC + SLR", xlab = "Observed",
      ylab = "Predicted", ylim = lim, xlim = lim, 
      sub = paste("ME = ", round(mean(pred4 - dnos[-i, y]), 2), sep = ""))
 abline(0, 1, col = 2)
-dev.off()
