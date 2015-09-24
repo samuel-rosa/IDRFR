@@ -145,10 +145,12 @@ fitRandomForest <-
     
     # Fit random forest models
     rf <- list()
+    fit <- list()
     for (i in 1:niter) {
       rf[[i]] <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
                             nodesize = nodesize)
-      y <- y - rf[[i]]$predicted
+      fit[[i]] <- rf[[i]]$predicted
+      y <- y - fit[[i]]
     }
 #     rf_p <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
 #                          nodesize = nodesize)
@@ -162,7 +164,12 @@ fitRandomForest <-
       x <- apply(x, 1, sum)
       # x <- rf_p$predicted - rf_r$predicted
       rf[[niter + 1]] <- stats::lm(y ~ x)
+      fit[[niter + 1]] <- fitted(rf[[niter + 1]])
     }
+    
+    # Fitted value
+    fit <- apply(data.frame(fit), 1, sum)
+    rf$fitted <- fit
     
     # Output
     # A list with the random forest regression (and simple linear regression) 
@@ -203,6 +210,7 @@ predRandomForest <-
     }
     
     pred <- list()
+    object <- object[-length(object)]
     slr <- sapply(object, class)
     if (slr[length(slr)] == "lm") {
       
