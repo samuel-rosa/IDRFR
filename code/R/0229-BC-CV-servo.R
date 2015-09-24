@@ -14,7 +14,7 @@ X <- NULL
 for (i in 1:(ncol(dat) - 1)) X <- cbind(X, factor(dat[, i]))
 Y <- dat[, ncol(dat)]
 
-nround <- 100 # Number of partitioning data to training and test
+nround <- 1000 # Number of partitioning data to training and test
 numtree <- 500
 ntrain <- round(2 * nsample / 3)
 ntest <- nsample - ntrain
@@ -39,14 +39,6 @@ repeat {
   
 } # repeat ends
 
-# Plot mse profile
 colnames(mse) <- paste("iter-", 1:niter, sep = "")
-eb <- apply(mse, 2, sd) / sqrt(nround)
 mse <- apply(mse, 2, mean)
-upper <- (mse + eb) / mse[1]
-lower <- (mse - eb) / mse[1]
-mse <- mse / mse[1]
-plot(1:niter, mse, type = "b", ylim = c(min(lower), max(upper)))
-abline(h = mse[1], col = "red")
-arrows(1:niter, lower, 1:niter, upper, length = 0.05, angle = 90, code = 3)
-which.min(mse)
+plot(1:niter, mse)
