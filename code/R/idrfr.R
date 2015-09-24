@@ -1,5 +1,105 @@
+# Optimum number of iterations for debiasing a random forest regression ########
+optimRandomForest <-
+  function (x, y, niter = 10, nruns = 100, ntree = 500, ntrain = 2/3, 
+            nodesize = 5, mtry = max(floor(ncol(x) / 3), 1), profile = TRUE) {
+    
+    nsample <- length(y)
+    if (ntrain < 1) {
+      ntrain <- round(nsample * ntrain)
+    }
+    ntest <- nsample - ntrain
+    
+    mse <- NULL
+    k <- 0
+    repeat {
+      k <- k + 1
+      id.train <- sample(1:nsample, ntrain, replace = FALSE)
+      id.test <- c(1:nsample)[-id.train]
+      
+      res <- .iterRandomForest(xtrain = x[id.train, ], ytrain = y[id.train], 
+                               xtest = x[id.test,], ntree = ntree, mtry = mtry,
+                               nodesize = nodesize, niter = niter)
+      res <- res[, -c(1:ntrain)] # prediction for test cases of this holding-out
+      
+      mse <- rbind(mse, apply(((t(res) - y[id.test])^2), 2, mean))
+      
+      if (k %% 100 == 0) print(k)
+      if (k == nruns) break
+      
+    } # repeat ends
+    
+    colnames(mse) <- paste("iter-", 1:niter, sep = "")
+    res <- list(mse = data.frame(mean = apply(mse, 2, mean), 
+                                 sd = apply(mse, 2, sd)),
+                call = data.frame(nruns = nruns, ntree = ntree, 
+                                  ntrain = ntrain, ntest = ntest, 
+                                  nodesize = nodesize, mtry = mtry))
+    
+    # Plot mse profile
+    if (profile) {
+      eb <- apply(mse, 2, sd) / sqrt(nruns)
+      mse <- apply(mse, 2, mean)
+      upper <- (mse + eb) / mse[1]
+      lower <- (mse - eb) / mse[1]
+      mse <- mse / mse[1]
+      plot(1:niter, mse, type = "b", ylim = c(min(lower), max(upper)),
+           ylab = "Standardized mean squared error", xlab = "Iteration",
+           #sub = paste("Average of ", nruns, " simulations", sep = ""),
+           main = "Mean squared error profile")
+      abline(h = mse[1], col = "red")
+      arrows(1:niter, lower, 1:niter, upper, length = 0.05, angle = 90, code = 3)
+      points(x = which.min(mse), y = min(mse), pch = 20, col = "blue", cex = 1.1)
+    }
+    
+    # Output: average of the mean squared prediction error for each iteration 
+    # over multiple runs
+    return (res)
+  }
+
+# 
+.iterRandomForest <- 
+  function (xtrain, ytrain, xtest, ntree, nodesize, mtry, niter) {
+    # xtrain is the design matrix for training cases, n*p; 
+    # ytrain is the response for training cases, a vector of length n;
+    # xtest is the design matrix for test cases, m*p;
+    # ntree is the number of trees per forest;
+    # nodesize is the maximal node size per tree;
+    # niter is the number of iterations for the bias-correction RFs.
+    
+    ni <- 0
+    ntrain <- nrow(xtrain)
+    ntest <- nrow(xtest)
+    pred.iter <- NULL # This records the predicted value for all X's
+    b <- ytrain # Reponse of training data of each iteration
+    
+    repeat {
+      ni <- ni + 1
+      RF.temp <- randomForest(x = xtrain, y = b, ntree = ntree, mtry = mtry,
+                              nodesize = nodesize)
+      bpred.oob <- RF.temp[[3]]
+      bpred.test <- predict(object = RF.temp, newdata = xtest) # Predict for test cases
+      pred.iter <- rbind(pred.iter, c(bpred.oob, bpred.test))
+      b <- b - bpred.oob
+      if (ni >= niter) break
+    } # repeat ends
+    
+    rownames(pred.iter) <- paste("iter-", 1:niter, sep = "")
+    colnames(pred.iter) <- c(paste("Tr-", 1:ntrain, sep = ""), paste("Test-", 1:ntest, sep = ""))
+    
+    pred <- pred.iter[1,]		# This saves the final prediction results of different iterations of BC
+    for (k in 2:niter){
+      pred = rbind(pred, apply(pred.iter[1:k,], 2, sum))
+    } # for k ends
+    
+    rownames(pred) <- paste("iter-", 1:niter, sep = "")
+    colnames(pred) <- c(paste("Tr-", 1:ntrain, sep = ""), paste("Test-", 1:ntest, sep = ""))
+    
+    return(pred)
+    
+  } # function ends
+
 # Fit a debiased random forest regression model ################################
-fitDRFR <- 
+fitIDRFR <- 
   function (y, x, ntree = 500, mtry = max(floor(ncol(x) / 3), 1), nodesize = 5,
             slr = FALSE) {
     
@@ -27,7 +127,7 @@ fitDRFR <-
   }
 
 # Predict using a debiased random forest regression model ######################
-predictDRFR <-
+predictIDRFR <-
   function (object, newdata) {
     
     # Predict with random forest models
