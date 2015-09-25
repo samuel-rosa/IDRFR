@@ -1,5 +1,6 @@
 # Source: Xu, R. Improvements to random forest methodology. Ames, Iowa: Iowa 
 # State University, p. 87, 2013.
+# Dan (dnett@iastate.edu) and Dan (dnordman@iastate.edu)
 # 
 ### bt resamples are drawn separately for every iteration.
 
