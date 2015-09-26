@@ -19,38 +19,89 @@ source("code/R/idrfr.R")
 # predicted values does not seem to affect the predictions.
 # 
 
-# Create synthetic data
+# Create synthetic nonlinear data
 n <- 50
+set.seed(1984)
 x <- runif(n = n)
+set.seed(1984)
 e <- rnorm(n = n, mean = 0, sd = 0.001)
 y <- vector()
 for (i in 1:n) {
   if (x[i] <= 0.5) {
-    y[i] <- x[i] + 0.5# + e[i]
+    y[i] <- x[i] + 0.5 + e[i]
   }
   if (x[i] > 0.5) {
-    y[i] <- x[i] - 0.5# + e[i]
+    y[i] <- x[i] - 0.5 + e[i]
   }
 }
 
-# Fit random forest models
-fit1 <- randomForest(y = y, x = data.frame(x))
-pred1 <- predict(fit1, data.frame(x))
-fit2 <- randomForest(y = y, x = data.frame(x), corr.bias = TRUE)
-pred2 <- predict(fit2, data.frame(x))
-fit3 <- fitRandomForest(y = y, x = data.frame(x))
-pred3 <- predRandomForest(fit3, data.frame(x))
-fit4 <- fitRandomForest(y = y, x = data.frame(x), slr = TRUE)
-pred4 <- predRandomForest(fit4, data.frame(x))
+# Fit random forest regression
+fit1 <- randomForest(y = y, x = data.frame(x), nodesize = 1)
+fit2 <- fitRandomForest(y = y, x = data.frame(x), nodesize = 1)
 
-# Plot predictions
-plot(y ~ x, pch = 20, type = "n")
+# Compute mean residuals
+data.frame(rf1 = mean(fit1$predicted - y), rf2 = mean(fit2$fitted.values - y))
+           
+# Make predictions
+pred1 <- predict(fit1, data.frame(x))
+pred2 <- predRandomForest(object = fit2, newdata = data.frame(x))
+
+# Compute error statistics
+data.frame(me = c(rf1 = mean(pred1 - y), rf2 = mean(pred2 - y)), 
+           mse = c(rf1 = mean((pred1 - y) ^ 2), rf2 = mean((pred2 - y) ^ 2)), 
+           mae = c(rf1 = mean(abs(pred1 - y)), rf2 = mean(abs(pred2 - y))))
+
+# Plot predictions against covariate
+par(mfrow = c(1, 2))
+xy_lim <- range(c(pred1, pred2, y, x))
+plot(y ~ x, pch = 20, type = "n", xlim = xy_lim, ylim = xy_lim,
+     ylab = "Predicted", xlab = "Covariate")
 abline(a = 0.5, b = 1, lwd = 2)
 abline(a = -0.5, b = 1, lwd = 2)
-points(pred1 ~ x, pch = 1, cex = 0.5, lwd = 2)
-points(pred2 ~ x, pch = 2, cex = 0.5, lwd = 2)
-points(pred3 ~ x, pch = 3, cex = 0.5, lwd = 2, col = "red")
-points(pred4 ~ x, pch = 4, cex = 0.5, lwd = 2, col = "blue")
+points(pred1 ~ x, pch = 1, col = "red")
+points(pred2 ~ x, pch = 3, col = "blue")
+legend(0.7, 1, legend = c("RF", "IDRF"), col = c("red", "blue"), pch = c(1, 3))
+
+# Plot predictions against observed values
+xy_lim <- range(c(pred1, pred2, y))
+plot(y ~ y, pch = 20, type = "n", xlim = xy_lim, ylim = xy_lim,
+     ylab = "Predicted", xlab = "Observed")
+abline(a = 0, b = 1)
+points(pred1 ~ y, pch = 1, col = "red")
+points(pred2 ~ y, pch = 3, col = "blue")
+legend(0, 1, legend = c("RF", "IDRF"), col = c("red", "blue"), pch = c(1, 3))
+
+# Create synthetic linear data
+n <- 50
+set.seed(2001)
+x <- rnorm(n = n)
+set.seed(2001)
+e <- rnorm(n = n, mean = 0, sd = 0.001)
+y <- x + e
+
+# Fit random forest regression and linear regression
+fit1 <- randomForest(y = y, x = data.frame(x), nodesize = 1)
+fit2 <- lm(y ~ x)
+
+# Make predictions
+pred1 <- predict(fit1, data.frame(x))
+pred2 <- predict(fit2, data.frame(x))
+
+# Plot predictions against observed values
+dev.off()
+xy_lim <- range(c(pred1, pred2, y, x))
+plot(y ~ x, pch = 20, type = "n", xlim = xy_lim, ylim = xy_lim, 
+     ylab = "Predicted", xlab = "Observed")
+abline(a = 0, b = 1)
+points(pred1 ~ y, pch = 1, col = "red")
+points(pred2 ~ y, pch = 3, col = "blue")
+legend(-3, 2.5, legend = c("RF", "LM"), col = c("red", "blue"), pch = c(1, 3))
+
+# Compute error statistics
+data.frame(me = c(rf1 = mean(pred1 - y), rf2 = mean(pred2 - y)),
+           mse = c(rf1 = mean((pred1 - y) ^ 2), rf2 = mean((pred2 - y) ^ 2)),
+           mae = c(rf1 = mean(abs(pred1 - y)), rf2 = mean(abs(pred2 - y))))
+
 
 # Real data example (based on Xu (2013)) #######################################
 # The raw random forest predictions have a significant bias, as seen when the
