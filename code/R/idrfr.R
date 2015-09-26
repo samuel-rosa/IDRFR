@@ -132,7 +132,7 @@ optimRandomForest <-
 # Fit a debiased random forest regression model ################################
 fitRandomForest <- 
   function (x, y, ntree = 500, mtry = max(floor(ncol(x) / 3), 1), nodesize = 5,
-            niter = 2, slr = FALSE) {
+            niter = 2) {
     
     # Check if suggested packages are installed
     pkg <- c("randomForest")
@@ -143,37 +143,21 @@ fitRandomForest <-
                  "installed: ", pkg, sep = ""), call. = FALSE)
     }
     
+    # Prepare objects
+    rf <- list(model = list(), fitted.values = list())
+    
     # Fit random forest models
-    rf <- list()
-    fit <- list()
     for (i in 1:niter) {
-      rf[[i]] <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
-                            nodesize = nodesize)
-      fit[[i]] <- rf[[i]]$predicted
-      y <- y - fit[[i]]
-    }
-#     rf_p <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
-#                          nodesize = nodesize)
-#     rf_r <- rf_p$predicted - y
-#     rf_r <- randomForest(y = rf_r, x = x, ntree = ntree, mtry = mtry, 
-#                          nodesize = nodesize)
-    
-    # Fit a simple linear regression
-    if (slr) {
-      x <- sapply(1:length(rf), function (i) rf[[i]]$predicted)
-      x <- apply(x, 1, sum)
-      # x <- rf_p$predicted - rf_r$predicted
-      rf[[niter + 1]] <- stats::lm(y ~ x)
-      fit[[niter + 1]] <- fitted(rf[[niter + 1]])
+      rf$model[[i]] <- randomForest(y = y, x = x, ntree = ntree, mtry = mtry, 
+                                    nodesize = nodesize)
+      rf$fitted.values[[i]] <- rf$model[[i]]$predicted
+      y <- y - rf$fitted.values[[i]]
     }
     
-    # Fitted value
-    fit <- apply(data.frame(fit), 1, sum)
-    rf$fitted <- fit
+    # Compute fitted values
+    rf$fitted.values <- apply(data.frame(rf$fitted.values), 1, sum)
     
     # Output
-    # A list with the random forest regression (and simple linear regression) 
-    # models in the order in which they have been fitted.
     return (rf)
   }
 #' Predict using an iteratively debiased random forest regression ##############
@@ -209,43 +193,19 @@ predRandomForest <-
                  "installed: ", pkg, sep = ""), call. = FALSE)
     }
     
+    # Prepare objects
     pred <- list()
-    object <- object[-length(object)]
-    slr <- sapply(object, class)
-    if (slr[length(slr)] == "lm") {
-      
-      # Predict with random forest followed by simple linear regression
-      for (i in 1:c(length(slr) - 1)) {
-        pred[[i]] <- predict(object = object[[i]], 
-                             newdata = data.frame(newdata))
-      }
-      x <- apply(data.frame(pred), 1, sum)
-      pred[[length(slr)]] <- predict(object = object[[length(slr)]], 
-                                     newdata = data.frame(x))
-    } else {
-      
-      # Predict with random forest only
-      for (i in 1:length(object)) {
-        pred[[i]] <- predict(object = object[[i]], newdata = newdata)
-      }
+    object <- object$model
+    
+    # Make predictions
+    for (i in 1:length(object)) {
+      pred[[i]] <- predict(object = object[[i]], newdata = newdata)
     }
     
-    # The final prediction is defined as the sum of the individual predictions
-    res <- as.numeric(apply(data.frame(pred), 1, sum))
-    
-    
-    # Predict with random forest models
-#     pred1 <- predict(object = object[[1]], newdata = newdata)
-#     pred2 <- predict(object = object[[2]], newdata = newdata)
-#     res <- pred1 - pred2
-    
-    # Predict with simple linear regression model
-#     if (attr(object, "slr")) {
-#       x <- data.frame(x = res)
-#       res <- predict(object = object[[3]], newdata = x)
-#     }
+    # Compute predicted value
+    pred <- as.numeric(apply(data.frame(pred), 1, sum))
     
     # Output
-    return (res)
+    return (pred)
       
   }
