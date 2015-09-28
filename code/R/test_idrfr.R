@@ -3,6 +3,81 @@ rm(list = ls())
 require(randomForest)
 source("code/R/idrfr.R")
 
+# Random forests do not return mean residual equal to zero #####################
+
+simMeanResidual <-
+  function (x, n = 100, runs = 100, quantreg = FALSE, bc = FALSE) {
+    
+    # Prepare data
+    mr <- vector()
+    mrl <- vector()
+    mru <- vector()
+    y <- x
+    1:round(length(x) / 2)
+    id_low <- 1:round(length(x) / 2)
+    
+    for (i in 1:runs) {
+      if (bc) {
+        fit1 <- fitRandomForest(x = data.frame(x), y = y, niter = 2,
+                                nodesize = 1)$fitted.values
+      } else {
+        if (quantreg) {
+          fit1 <- quantregForest::quantregForest(y = y, x = data.frame(x), 
+                                                 nodesize = 1, 
+                                                 quantiles = 0.5)$predicted
+        } else {
+          fit1 <- randomForest(y = y, x = data.frame(x), nodesize = 1)$predicted
+        }
+      }
+      
+      mr[i] <- mean(fit1 - y)
+      tmp <- data.frame(pred = fit1, obs = y)
+      tmp <- tmp[order(tmp$obs), ]
+      mrl[i] <- mean(tmp$pred[id_low] - tmp$obs[id_low])
+      mru[i] <- mean(tmp$pred[-id_low] - tmp$obs[-id_low])
+    }
+    
+    # Prepare output
+    res <- list(mr = mr, mrl = mrl, mru = mru)
+    return (res)
+  }
+
+# Left-tailed data
+n <- 100
+set.seed(2001)
+lx <- rbeta(n, 10, 1)
+lx <- round(((lx - min(lx)) / (max(lx) - min(lx))) * 1000)
+me <- simMeanResidual(x = lx, n = n, bc = T)
+par(mfrow = c(2, 2))
+hist(lx, xlim = c(0, 1000), main = "Left-tailed data", xlab = "True values")
+hist(me$mr, main = "Overall", xlab = "Mean error")
+hist(me$mrl, main = "Lower half", xlab = "Mean error")
+hist(me$mru, main = "Upper half", xlab = "Mean error")
+
+# Right-tailed data
+n <- 100
+set.seed(2001)
+rx <- rbeta(n, 1, 10)
+rx <- round(((rx - min(rx)) / (max(rx) - min(rx))) * 1000)
+me <- simMeanResidual(x = rx, n = n)
+par(mfrow = c(2, 2))
+hist(rx, xlim = c(0, 1000), main = "Left-tailed data", xlab = "True values")
+hist(me$mr, main = "Overall", xlab = "Mean error")
+hist(me$mrl, main = "Lower half", xlab = "Mean error")
+hist(me$mru, main = "Upper half", xlab = "Mean error")
+
+# Normal distribution
+set.seed(2001)
+n <- 100
+nx <- rbeta(n, 5, 5)
+nx <- round(((nx - min(nx)) / (max(nx) - min(nx))) * 1000)
+me <- simMeanResidual(x = nx, n = n)
+par(mfrow = c(2, 2))
+hist(nx, xlim = c(0, 1000), main = "Gaussian data", xlab = "True values")
+hist(me$mr, main = "Overall", xlab = "Mean error")
+hist(me$mrl, main = "Lower half", xlab = "Mean error")
+hist(me$mru, main = "Upper half", xlab = "Mean error")
+
 # Synthetic dataset (based on Xu (2013)) #######################################
 # The raw random forest prediction is biased because it is fundamentally a 
 # nearest neighbour method. The naive bias correction consists in fitting a 
